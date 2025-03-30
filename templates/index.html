@@ -1,0 +1,320 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Digit Recognition</title>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <div class="container">
+        <h1>Digit Recognizer</h1>
+        
+        <div class="model-selector">
+            <h2>Select Model</h2>
+            <select id="model-selector">
+                <option value="cnn">CNN</option>
+                <option value="svm">SVM</option>
+                <option value="logistic">Logistic Regression</option>
+                <option value="random_forest">Random Forest</option>
+            </select>
+        </div>
+        
+        <div class="main-content">
+            <div class="left-panel">
+                <h2>Draw a Digit</h2>
+                <canvas id="canvas" width="280" height="280"></canvas>
+                <div class="buttons">
+                    <button id="clear">Clear</button>
+                    <button id="predict">
+                        <span>Predict</span>
+                        <div class="spinner" style="display: none;"></div>
+                    </button>
+                </div>
+                <div id="first-request-alert" style="display: none;">Might take time for the first request</div>
+                <div id="result">Predicted Digit: -</div>
+                
+                <div id="accuracy-chart-container">
+                    <h3 id="chart-title">Prediction Confidence</h3>
+                    <div id="chart-info" class="chart-info" style="display: none;"></div>
+                    <table id="accuracy-table">
+                        <thead>
+                            <tr>
+                                <th>Digit</th>
+                                <th>Score</th>
+                                <th>Bar</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <!-- Will be populated by JavaScript -->
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+            
+            <div class="right-panel">
+                <div class="model-info">
+                    <h2>Model Performance</h2>
+                    
+                    <div class="heatmap-container">
+                        <h3>Confusion Matrix</h3>
+                        <img id="heatmap-image" src="/placeholder.svg" alt="Model Heatmap">
+                    </div>
+                    
+                    <div class="classification-report">
+                        <h3>Classification Report</h3>
+                        <pre id="classification-report-pre"></pre>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <script>
+        // Canvas setup
+        const canvas = document.getElementById('canvas');
+        const ctx = canvas.getContext('2d');
+        let drawing = false;
+        let isFirstRequest = true;
+
+        // Set background to black
+        ctx.fillStyle = "black";
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        ctx.lineWidth = 25;  
+        ctx.lineCap = 'round';
+
+        // Canvas event listeners
+        canvas.addEventListener('mousedown', () => drawing = true);
+        canvas.addEventListener('mouseup', () => {
+            drawing = false;
+            ctx.beginPath();
+        });
+        canvas.addEventListener('mousemove', draw);
+
+        // Touch event support
+        canvas.addEventListener('touchstart', (e) => {
+            e.preventDefault();
+            drawing = true;
+        });
+        
+        canvas.addEventListener('touchend', (e) => {
+            e.preventDefault();
+            drawing = false;
+            ctx.beginPath();
+        });
+        
+        canvas.addEventListener('touchmove', (e) => {
+            e.preventDefault();
+            if (!drawing) return;
+            const touch = e.touches[0];
+            const rect = canvas.getBoundingClientRect();
+            const offsetX = touch.clientX - rect.left;
+            const offsetY = touch.clientY - rect.top;
+            
+            ctx.strokeStyle = "white";
+            ctx.lineTo(offsetX, offsetY);
+            ctx.stroke();
+            ctx.beginPath();
+            ctx.moveTo(offsetX, offsetY);
+        });
+
+        function draw(event) {
+            if (!drawing) return;
+            ctx.strokeStyle = "white";  // Draw in white
+            ctx.lineTo(event.offsetX, event.offsetY);
+            ctx.stroke();
+            ctx.beginPath();
+            ctx.moveTo(event.offsetX, event.offsetY);
+        }
+
+        // Clear button
+        document.getElementById('clear').addEventListener('click', () => {
+            ctx.fillStyle = "black";  // Reset background to black
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            document.getElementById('result').innerText = 'Predicted Digit: -';
+            clearAccuracyTable();
+            document.getElementById('chart-info').innerHTML = '';
+            document.getElementById('chart-info').style.display = 'none';
+        });
+
+        // Model selector
+        const modelSelector = document.getElementById('model-selector');
+        modelSelector.addEventListener('change', updateModelInfo);
+        
+        // Initialize model info on page load
+        window.addEventListener('DOMContentLoaded', function() {
+            updateModelInfo();
+        });
+        
+        // Update heatmap and classification report based on selected model
+        function updateModelInfo() {
+            const modelType = modelSelector.value;
+            
+            // Update heatmap image
+            const heatmapImage = document.getElementById('heatmap-image');
+            heatmapImage.src = `/static/heatmaps/${modelType}_heatmap.png`;
+            
+            // Get classification report
+            fetch('/get_classification_report', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ model_type: modelType })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.report) {
+                    document.getElementById('classification-report-pre').textContent = data.report;
+                }
+            });
+            
+            // Clear previous prediction results when changing models
+            document.getElementById('result').innerText = 'Predicted Digit: -';
+            clearAccuracyTable();
+            
+            // Update chart info based on model type
+            updateChartInfo(modelType);
+        }
+        
+        // Update the chart heading and info based on model type
+        function updateChartInfo(modelType) {
+            const chartTitle = document.getElementById('chart-title');
+            const chartInfo = document.getElementById('chart-info');
+            
+            if (modelType === "svm") {
+                chartTitle.textContent = "Decision Distances";
+                chartInfo.innerHTML = "<p>For SVM, bars show distance from decision boundary. Larger values indicate greater confidence.</p>";
+                chartInfo.style.display = 'block';
+            } else {
+                chartTitle.textContent = "Prediction Confidence";
+                chartInfo.innerHTML = "";
+                chartInfo.style.display = 'none';
+            }
+        }
+        
+        // Predict button
+        document.getElementById('predict').addEventListener('click', () => {
+            const predictBtn = document.getElementById('predict');
+            const spinner = predictBtn.querySelector('.spinner');
+            const btnText = predictBtn.querySelector('span');
+            const firstRequestAlert = document.getElementById('first-request-alert');
+            
+            // Show loading animation
+            spinner.style.display = 'inline-block';
+            btnText.style.opacity = '0.7';
+            predictBtn.disabled = true;
+            
+            // Show first request alert if this is the first prediction
+            if (isFirstRequest) {
+                firstRequestAlert.style.display = 'block';
+                isFirstRequest = false;
+                
+                // Hide the alert after 5 seconds
+                setTimeout(() => {
+                    firstRequestAlert.style.display = 'none';
+                }, 5000);
+            }
+            
+            const imageData = canvas.toDataURL('image/png');
+            const modelType = modelSelector.value;
+            
+            fetch('/predict', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ 
+                    image: imageData,
+                    model_type: modelType
+                })
+            })
+            .then(response => response.json())
+            .then(data => {
+                // Hide loading animation
+                spinner.style.display = 'none';
+                btnText.style.opacity = '1';
+                predictBtn.disabled = false;
+                
+                if (data.error) {
+                    document.getElementById('result').innerText = 'Error: ' + data.error;
+                    return;
+                }
+                
+                document.getElementById('result').innerText = 'Predicted Digit: ' + data.digit;
+                
+                // Update chart info if needed
+                updateChartInfo(modelType);
+                
+                // Update the accuracy/decision score table
+                updateScoreTable(data.confidence_scores, data.score_type, data.digit);
+            })
+            .catch(error => {
+                // Hide loading animation on error too
+                spinner.style.display = 'none';
+                btnText.style.opacity = '1';
+                predictBtn.disabled = false;
+                document.getElementById('result').innerText = 'Error: Failed to predict';
+                console.error('Prediction error:', error);
+            });
+        });
+        
+        // Function to update the score table (handles both confidence and decision scores)
+        function updateScoreTable(scores, scoreType, predictedDigit) {
+            const tableBody = document.querySelector('#accuracy-table tbody');
+            tableBody.innerHTML = '';
+            
+            // Find max score for scaling the bars
+            const maxScore = Math.max(...scores);
+            
+            // Sort scores based on model type and score type
+            let displayScores = [...scores];
+            let indices = Array.from(Array(displayScores.length).keys());
+            
+            if (scoreType === "probability") {
+                // Sort by probability (highest first)
+                indices.sort((a, b) => displayScores[b] - displayScores[a]);
+            } else if (scoreType === "decision_distance") {
+                // For SVM decision distances, sort by absolute value (highest magnitude first)
+                indices.sort((a, b) => Math.abs(displayScores[b]) - Math.abs(displayScores[a]));
+            }
+            
+            // Display scores in sorted order
+            indices.forEach(index => {
+                const row = document.createElement('tr');
+                const score = displayScores[index];
+                
+                // Format display value based on score type
+                let displayValue;
+                if (scoreType === "probability") {
+                    displayValue = (score * 100).toFixed(2) + '%';
+                } else if (scoreType === "decision_distance") {
+                    displayValue = score.toFixed(4);
+                } else {
+                    displayValue = score.toFixed(2);
+                }
+                
+                // Calculate bar width as percentage of max score
+                const barWidth = ((Math.abs(score) / Math.max(...scores.map(Math.abs))) * 100).toFixed(2) + '%';
+                
+                // Add special highlighting for the predicted digit
+                const isSelectedClass = (index === parseInt(predictedDigit));
+                
+                row.innerHTML = `
+                    <td class="${isSelectedClass ? 'selected-digit' : ''}">${index}</td>
+                    <td class="${isSelectedClass ? 'selected-digit' : ''}">${displayValue}</td>
+                    <td>
+                        <div class="bar-container">
+                            <div class="bar ${isSelectedClass ? 'selected-bar' : ''}" style="width: ${barWidth}"></div>
+                        </div>
+                    </td>
+                `;
+                
+                tableBody.appendChild(row);
+            });
+        }
+        
+        // Clear the accuracy table
+        function clearAccuracyTable() {
+            const tableBody = document.querySelector('#accuracy-table tbody');
+            tableBody.innerHTML = '';
+        }
+    </script>
+</body>
+</html>

@@ -17,7 +17,7 @@ This is a **Flask-based web application** for **handwritten digit recognition** 
 - **Deployed Online:** Access the live demo at [Render Deployment](https://digit-recognizer-i0xj.onrender.com/).
 
 ## Live Demo
-🔗 **Try it out here:** [Digit Recognizer Web App](https://digit-recognizer-i0xj.onrender.com/)
+🔗 **Try it out here:** [Digit Recognizer Web App](https://digit-recognizer-i0xj.onrender.com/) (Might take some time to load for the first time)
 
 ## Setup Instructions
 To run the app locally, follow these simple steps:

@@ -24,7 +24,7 @@ To run the app locally, follow these simple steps:
 
 1. **Clone the repository:**
    ```bash
-   git clone <repository-url>
+   git clone https://github.com/Sambhaji-Patil/Digit-recognizer.git
    cd Digit-recognizer
    ```
 
